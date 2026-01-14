@@ -4,6 +4,11 @@ Python app that converts input images into the pixelated style seen in different
   **PlayStation (PS1, RGB555, 32)**, **Sega Genesis/Mega Drive (RGB333, 64)**, **NES (Nestopia 54)**,
   **Nintendo 64 (RGBA5551-like, 64)**, **Adaptive 32-color**.
 
+## Screenshots
+
+| <img src="https://github.com/user-attachments/assets/1f82ea24-08cd-4554-9fdf-7308ca40c1a9" /> |<img src="https://github.com/user-attachments/assets/fde9d327-b4dc-4806-b944-4d0964c108ef" /> | <img src="https://github.com/user-attachments/assets/debb9079-9dc4-4f09-a6ed-f5c119568d4b" /> |
+|---|---|---|
+
 ## Run
 ```bash
 pip install pillow
