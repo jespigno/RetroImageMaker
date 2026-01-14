@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk, ImageEnhance, ImageFilter
 
-APP_TITLE = "Nostalgifier"
+APP_TITLE = "RetroImageMaker"
 PREVIEW_SIZE = (512, 512)
 GRID_THUMB_SIZE = (256, 256)
 
