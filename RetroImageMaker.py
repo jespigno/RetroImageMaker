@@ -645,11 +645,11 @@ class PixelArtApp:
         self.processed_image = None
         self.preview_photo = None
         self.compare_photos = []  
-
+        self.custom_palettes = CUSTOM_PALETTES
+        self.current_palette_name = DEFAULT_CUSTOM_NAME
         # Notebook
         self.nb = ttk.Notebook(root)
         self.nb.pack(fill=tk.BOTH, expand=True)
-
         self.single_tab = ttk.Frame(self.nb)
         self.nb.add(self.single_tab, text="Single Style")
         self.compare_tab = ttk.Frame(self.nb)
@@ -662,29 +662,36 @@ class PixelArtApp:
 
         ttk.Label(controls, text="Style:").grid(row=0, column=1, padx=(0, 4), pady=4, sticky="e")
         self.style_var = tk.StringVar(value=STYLES[0])
-        self.style_cb = ttk.Combobox(controls, textvariable=self.style_var, values=STYLES, state="readonly", width=42)
+        self.style_cb = ttk.Combobox(controls, textvariable=self.style_var, values=STYLES, state="readonly", width=36) #or 42...?
         self.style_cb.grid(row=0, column=2, padx=(0, 8), pady=4, sticky="w")
         self.style_cb.bind("<<ComboboxSelected>>", lambda e: self.update_processing())
 
-        ttk.Label(controls, text="Pixel size:").grid(row=0, column=3, padx=(0, 4), pady=4, sticky="e")
+        ttk.Label(controls, text="Palette:").grid(row=0, column=3, padx=(0, 4), pady=4, sticky="e")
+        self.palette_var = tk.StringVar(value=self.current_palette_name)
+        self.palette_cb = ttk.Combobox(controls, textvariable=self.palette_var, values=list(self.custom_palettes.keys()), state="readonly", width=24)
+        self.palette_cb.grid(row=0, column=4, padx=(0, 4), pady=4, sticky="w")
+        self.palette_cb.bind("<<ComboboxSelected>>", self._on_palette_changed)
+        ttk.Button(controls, text="Edit Palettes…", command=self.open_palette_editor).grid(row=0, column=5, padx=(0,8), pady=4, sticky="w")
+
+
+        ttk.Label(controls, text="Pixel size:").grid(row=0, column=6, padx=(0, 4), pady=4, sticky="e")
         self.pixel_var = tk.IntVar(value=12)
         self.pixel_slider = ttk.Scale(controls, from_=4, to=48, orient=tk.HORIZONTAL, command=self.on_slider)
         self.pixel_slider.set(self.pixel_var.get())
-        self.pixel_slider.grid(row=0, column=4, padx=(0, 8), pady=4, sticky="we")
-        controls.columnconfigure(4, weight=1)
+        self.pixel_slider.grid(row=0, column=7, padx=(0, 8), pady=4, sticky="we")
+        controls.columnconfigure(7, weight=1)
         self.pixel_label = ttk.Label(controls, text=f"{self.pixel_var.get()} px")
-        self.pixel_label.grid(row=0, column=5, padx=(0, 8), pady=4, sticky="w")
+        self.pixel_label.grid(row=0, column=8, padx=(0, 8), pady=4, sticky="w")
 
         self.dither_var = tk.BooleanVar(value=False)
         self.dither_chk = ttk.Checkbutton(controls, text="Dithering", variable=self.dither_var, command=self.update_processing)
-        self.dither_chk.grid(row=0, column=6, padx=(0, 8), pady=4, sticky="w")
+        self.dither_chk.grid(row=0, column=9, padx=(0, 8), pady=4, sticky="w")
 
         self.save_btn = ttk.Button(controls, text="Save Pixel Art…", command=self.save_image)
-        self.save_btn.grid(row=0, column=7, padx=(0, 8), pady=4, sticky="e")
+        self.save_btn.grid(row=0, column=10, padx=(0, 8), pady=4, sticky="e")
 
         adv = ttk.LabelFrame(self.single_tab, text="Advanced options", padding=10)
         adv.pack(side=tk.TOP, fill=tk.X, padx=10, pady=(0, 10))
-
         ttk.Label(adv, text="NES Emphasis:").grid(row=0, column=0, sticky="e")
         self.nes_r = tk.BooleanVar(value=False)
         self.nes_g = tk.BooleanVar(value=False)
@@ -702,7 +709,6 @@ class PixelArtApp:
         ttk.Label(adv, text="N64 Texture Mode:").grid(row=0, column=6, sticky="e")
         self.n64_mode = tk.StringVar(value="RGBA5551")
         ttk.Combobox(adv, textvariable=self.n64_mode, values=["RGBA5551", "CI8", "CI4"], state="readonly", width=8).grid(row=0, column=7, padx=4, sticky="w")
-
         def _bind_n64(*_):
             self.update_processing()
         self.n64_mode.trace_add('write', lambda *args: _bind_n64())
@@ -714,7 +720,6 @@ class PixelArtApp:
 
         compare_controls = ttk.Frame(self.compare_tab, padding=10)
         compare_controls.pack(side=tk.TOP, fill=tk.X)
-
         ttk.Button(compare_controls, text="Refresh Grid", command=self.refresh_compare).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(compare_controls, text="Save All…", command=self.save_all).pack(side=tk.LEFT)
 
@@ -723,7 +728,6 @@ class PixelArtApp:
         self.grid_scroll = ttk.Scrollbar(self.compare_tab, orient=tk.VERTICAL, command=self.grid_canvas.yview)
         self.grid_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.grid_canvas.configure(yscrollcommand=self.grid_scroll.set)
-
         self.grid_inner = ttk.Frame(self.grid_canvas)
         self.grid_window = self.grid_canvas.create_window((0, 0), window=self.grid_inner, anchor='nw')
         self.grid_inner.bind("<Configure>", lambda e: self.grid_canvas.configure(scrollregion=self.grid_canvas.bbox(self.grid_window)))
@@ -731,6 +735,11 @@ class PixelArtApp:
 
     def _on_canvas_resize(self, event):
         self.grid_canvas.itemconfig(self.grid_window, width=event.width)
+
+    # ------------- events & helpers -------------
+    def _on_palette_changed(self, *_):
+        self.current_palette_name = self.palette_var.get()
+        self.update_processing()
 
     def on_slider(self, value):
         val = int(float(value))
@@ -754,6 +763,10 @@ class PixelArtApp:
         except Exception as e:
             messagebox.showerror("Error", f"Could not open image:\n{e}")
 
+    def _get_selected_custom_palette(self):
+        name = self.current_palette_name
+        return self.custom_palettes.get(name, [])
+
     def update_processing(self):
         if self.original_image is None:
             return
@@ -761,11 +774,13 @@ class PixelArtApp:
             style = self.style_var.get()
             pixel_size = int(self.pixel_var.get())
             dither = bool(self.dither_var.get())
+            custom_pal = self._get_selected_custom_palette() if style == "Custom Palette (User)" else None
             self.processed_image = apply_style(
                 self.original_image, style, pixel_size, dither,
                 nes_r=self.nes_r.get(), nes_g=self.nes_g.get(), nes_b=self.nes_b.get(),
                 genesis_vdp=self.genesis_vdp.get(), ps1_movie=self.ps1_movie.get(),
-                n64_mode=self.n64_mode.get()
+                n64_mode=self.n64_mode.get(),
+                custom_palette=custom_pal
             )
             preview_img = fit_image_for_preview(self.processed_image, PREVIEW_SIZE)
             self.preview_photo = ImageTk.PhotoImage(preview_img)
@@ -778,21 +793,26 @@ class PixelArtApp:
         for w in list(self.grid_inner.children.values()):
             w.destroy()
         self.compare_photos.clear()
+
         if self.original_image is None:
             ttk.Label(self.grid_inner, text="Load an image to compare styles.").grid(row=0, column=0, padx=10, pady=10, sticky='w')
             return
+
         pixel_size = int(self.pixel_var.get())
         dither = bool(self.dither_var.get())
+
         # Build grid of previews
         cols = 2
         r = c = 0
         for style in STYLES:
             try:
+                custom_pal = self._get_selected_custom_palette() if style == "Custom Palette (User)" else None
                 out = apply_style(
                     self.original_image, style, pixel_size, dither,
                     nes_r=self.nes_r.get(), nes_g=self.nes_g.get(), nes_b=self.nes_b.get(),
                     genesis_vdp=self.genesis_vdp.get(), ps1_movie=self.ps1_movie.get(),
-                    n64_mode=self.n64_mode.get()
+                    n64_mode=self.n64_mode.get(),
+                    custom_palette=custom_pal
                 )
                 thumb = fit_image_for_preview(out, GRID_THUMB_SIZE)
                 photo = ImageTk.PhotoImage(thumb)
@@ -821,7 +841,7 @@ class PixelArtApp:
         path = filedialog.asksaveasfilename(
             title="Save pixel art",
             defaultextension=".png",
-            filetypes=[("PNG", ".png"), ("JPEG", ".jpg .jpeg"), ("BMP", ".bmp"), ("All files", "*.*")],
+            filetypes=[("PNG", ".png"), ("JPEG", ".jpg .jpeg"), ("BMP", ".bmp"), ("All files", "*.*")]
         )
         if not path:
             return
@@ -848,11 +868,13 @@ class PixelArtApp:
         errors = []
         for style in STYLES:
             try:
+                custom_pal = self._get_selected_custom_palette() if style == "Custom Palette (User)" else None
                 out = apply_style(
                     self.original_image, style, pixel_size, dither,
                     nes_r=self.nes_r.get(), nes_g=self.nes_g.get(), nes_b=self.nes_b.get(),
                     genesis_vdp=self.genesis_vdp.get(), ps1_movie=self.ps1_movie.get(),
-                    n64_mode=self.n64_mode.get()
+                    n64_mode=self.n64_mode.get(),
+                    custom_palette=custom_pal
                 )
                 safe = style.replace('/', '-').replace('(', '').replace(')', '').replace(',', '').replace(' ', '_')
                 path = os.path.join(folder, f"pixel_{safe}.png")
@@ -865,6 +887,18 @@ class PixelArtApp:
             msg += "\n\nErrors:\n" + "\n".join(errors)
         messagebox.showinfo("Save All", msg)
 
+    # --------- palette editor integration ---------
+    def open_palette_editor(self):
+        def on_commit(name):
+            # update selection after dialog OK
+            self.current_palette_name = name
+            self.palette_var.set(name)
+            # refresh palette list in combobox
+            self.palette_cb.configure(values=list(self.custom_palettes.keys()))
+            self.update_processing()
+        PaletteEditor(self.root, self.custom_palettes, self.current_palette_name, on_commit)
+
+# -------------------- app entry --------------------
 def main():
     root = tk.Tk()
     try:
