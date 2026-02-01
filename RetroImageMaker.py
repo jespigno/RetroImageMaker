@@ -115,13 +115,6 @@ def save_gpl(path: str, palette, name="Custom"):
 
 
 def load_jasc_pal(path: str):
-    """
-    JASC-PAL (Paint Shop Pro) text palette:
-      Line1: JASC-PAL
-      Line2: 0100
-      Line3: N
-      Next N lines: R G B (0-255)
-    """
     colors = []
     with open(path, 'r', encoding='utf-8', errors='ignore') as f:
         lines = [ln.strip() for ln in f if ln.strip()]
@@ -402,12 +395,10 @@ class PaletteEditor(tk.Toplevel):
         self._build_grid()
         self._reload_grid()
 
+    # ---------------- grid & selection ----------------
     def _build_grid(self):
-        # Clear current children
         for w in list(self.grid_frame.children.values()):
             w.destroy()
-
-        # Create a fixed grid of buttons (up to 256)
         self.swatch_btns = []
         for i in range(256):
             r = i // self.COLS
@@ -417,7 +408,6 @@ class PaletteEditor(tk.Toplevel):
             btn.bind("<Button-1>", lambda e, idx=i: self._on_swatch_click(idx))
             self.swatch_btns.append(btn)
 
-            
     def _reload_grid(self):
         name = self.name_var.get()
         if name not in self.palettes:
@@ -430,8 +420,6 @@ class PaletteEditor(tk.Toplevel):
             else:
                 btn.configure(bg=self.cget("bg"))
         self.selected_index = None
-
-        # update combobox list (in case of add/delete/rename)
         self.name_cb.configure(values=list(self.palettes.keys()))
         self.name_cb.set(name)
 
@@ -441,11 +429,10 @@ class PaletteEditor(tk.Toplevel):
         self.selected_index = idx if idx < len(pal) else None
         if self.selected_index is not None:
             self.hex_var.set(to_hex(pal[self.selected_index]))
-        # visualize selection (bold border)
         for i, btn in enumerate(self.swatch_btns):
             btn.configure(highlightthickness=2 if i == self.selected_index else 0, highlightbackground="#333")
-    
-    
+
+    # ----------------- actions -----------------
     def _add_or_replace_from_hex(self):
         try:
             rgb = parse_hex_color(self.hex_var.get())
@@ -464,17 +451,13 @@ class PaletteEditor(tk.Toplevel):
         self.palettes[name] = pal
         self._reload_grid()
 
-    
     def _eyedropper(self):
-        # use tk color chooser; returns ((r,g,b), "#RRGGBB")
         color = colorchooser.askcolor(parent=self, title="Pick a color")
         if color and color[0] is not None:
             r,g,b = [clamp8(v) for v in color[0]]
             self.hex_var.set(to_hex((r,g,b)))
-            # immediately add/replace to speed up workflow
             self._add_or_replace_from_hex()
-        
-    
+
     def _remove_selected(self):
         name = self.name_var.get()
         pal = self.palettes.get(name, [])
@@ -494,10 +477,8 @@ class PaletteEditor(tk.Toplevel):
             pal[i], pal[j] = pal[j], pal[i]
             self.selected_index = j
             self._reload_grid()
-            # re-highlight moved index
             self._on_swatch_click(j)
-    
-    
+
     def _clear_palette(self):
         name = self.name_var.get()
         if messagebox.askyesno("Clear palette", f"Remove all colors from '{name}'?", parent=self):
@@ -516,7 +497,6 @@ class PaletteEditor(tk.Toplevel):
         self.name_var.set(new_name)
         self._reload_grid()
 
-
     def _rename_palette(self):
         curr = self.name_var.get()
         new_name = self._ask_text("Rename Palette", "New name:", default=curr)
@@ -529,7 +509,6 @@ class PaletteEditor(tk.Toplevel):
         self.name_var.set(new_name)
         self._reload_grid()
 
-    
     def _delete_palette(self):
         name = self.name_var.get()
         if messagebox.askyesno("Delete palette", f"Delete '{name}'?", parent=self):
@@ -537,7 +516,6 @@ class PaletteEditor(tk.Toplevel):
                 del self.palettes[name]
             except KeyError:
                 pass
-            # ensure at least one palette exists
             if not self.palettes:
                 self.palettes[DEFAULT_CUSTOM_NAME] = []
                 self.name_var.set(DEFAULT_CUSTOM_NAME)
@@ -545,11 +523,11 @@ class PaletteEditor(tk.Toplevel):
                 self.name_var.set(list(self.palettes.keys())[0])
             self._reload_grid()
 
-
     def _import_palette(self):
         path = filedialog.askopenfilename(
             title="Import Palette",
-            filetypes=[("Palettes", ".gpl .pal"), ("GIMP/Aseprite .gpl", ".gpl"), ("JASC-PAL .pal", ".pal"), ("All files", "*.*")]
+            filetypes=[("Palettes", ".gpl .pal"), ("GIMP/Aseprite .gpl", ".gpl"),
+                       ("JASC-PAL .pal", ".pal"), ("All files", "*.*")]
         )
         if not path:
             return
@@ -561,7 +539,6 @@ class PaletteEditor(tk.Toplevel):
                 pal = load_jasc_pal(path)
             else:
                 raise ValueError("Unsupported extension")
-            # add as a new palette name = filename
             base = os.path.splitext(os.path.basename(path))[0]
             name = base
             suffix = 1
@@ -573,7 +550,6 @@ class PaletteEditor(tk.Toplevel):
             self._reload_grid()
         except Exception as e:
             messagebox.showerror("Import failed", str(e), parent=self)
-        
 
     def _export_palette(self):
         name = self.name_var.get()
@@ -585,7 +561,8 @@ class PaletteEditor(tk.Toplevel):
             title="Export Palette",
             defaultextension=".gpl",
             initialfile=f"{name}.gpl",
-            filetypes=[("GIMP/Aseprite .gpl", ".gpl"), ("JASC-PAL .pal", ".pal"), ("All files", "*.*")]
+            filetypes=[("GIMP/Aseprite .gpl", ".gpl"), ("JASC-PAL .pal", ".pal"),
+                       ("All files", "*.*")]
         )
         if not path:
             return
@@ -597,18 +574,15 @@ class PaletteEditor(tk.Toplevel):
                 save_jasc_pal(path, pal)
             else:
                 raise ValueError("Choose .gpl or .pal")
-            messagebox.showinfo("Exported", f"Saved palette to:\n{path}", parent=self)  
+            messagebox.showinfo("Exported", f"Saved palette to:\n{path}", parent=self)
         except Exception as e:
             messagebox.showerror("Export failed", str(e), parent=self)
-        
-    
+
     def _commit(self):
-        """Return chosen palette name to parent."""
         if callable(self.on_commit):
             self.on_commit(self.name_var.get())
         self.destroy()
-    
-    
+
     def _ask_text(self, title, prompt, default=""):
         win = tk.Toplevel(self)
         win.title(title)
@@ -628,12 +602,11 @@ class PaletteEditor(tk.Toplevel):
             win.destroy()
         def cancel():
             win.destroy()
-        
+
         ttk.Button(btns, text="OK", command=ok).pack(side=tk.LEFT, padx=5)
         ttk.Button(btns, text="Cancel", command=cancel).pack(side=tk.LEFT, padx=5)
         self.wait_window(win)
         return out["val"]
-
 #UI stuff
 class PixelArtApp:
     def __init__(self, root: tk.Tk):
@@ -644,16 +617,22 @@ class PixelArtApp:
         self.original_image = None
         self.processed_image = None
         self.preview_photo = None
-        self.compare_photos = []  
+        self.compare_photos = []
+
+        # Custom palette state
         self.custom_palettes = CUSTOM_PALETTES
         self.current_palette_name = DEFAULT_CUSTOM_NAME
+
         # Notebook
         self.nb = ttk.Notebook(root)
         self.nb.pack(fill=tk.BOTH, expand=True)
+
         self.single_tab = ttk.Frame(self.nb)
         self.nb.add(self.single_tab, text="Single Style")
+
         self.compare_tab = ttk.Frame(self.nb)
         self.nb.add(self.compare_tab, text="Compare All")
+
         controls = ttk.Frame(self.single_tab, padding=10)
         controls.pack(side=tk.TOP, fill=tk.X)
 
@@ -662,17 +641,25 @@ class PixelArtApp:
 
         ttk.Label(controls, text="Style:").grid(row=0, column=1, padx=(0, 4), pady=4, sticky="e")
         self.style_var = tk.StringVar(value=STYLES[0])
-        self.style_cb = ttk.Combobox(controls, textvariable=self.style_var, values=STYLES, state="readonly", width=36) #or 42...?
+        self.style_cb = ttk.Combobox(controls, textvariable=self.style_var, values=STYLES, state="readonly", width=36)
         self.style_cb.grid(row=0, column=2, padx=(0, 8), pady=4, sticky="w")
-        self.style_cb.bind("<<ComboboxSelected>>", lambda e: self.update_processing())
+        # When style changes, update visibility and re-render
+        self.style_cb.bind("<<ComboboxSelected>>", lambda e: (self._update_palette_visibility(), self.update_processing()))
 
-        ttk.Label(controls, text="Palette:").grid(row=0, column=3, padx=(0, 4), pady=4, sticky="e")
+        # --- palette section (wrapped for show/hide) ---
+        self.palette_frame = ttk.Frame(controls)
+        self.palette_frame.grid(row=0, column=3, columnspan=3, sticky="w", padx=(0, 8))
+
+        ttk.Label(self.palette_frame, text="Palette:").grid(row=0, column=0, padx=(0, 4), pady=4, sticky="e")
         self.palette_var = tk.StringVar(value=self.current_palette_name)
-        self.palette_cb = ttk.Combobox(controls, textvariable=self.palette_var, values=list(self.custom_palettes.keys()), state="readonly", width=24)
-        self.palette_cb.grid(row=0, column=4, padx=(0, 4), pady=4, sticky="w")
+        self.palette_cb = ttk.Combobox(self.palette_frame, textvariable=self.palette_var,
+                                       values=list(self.custom_palettes.keys()),
+                                       state="readonly", width=24)
+        self.palette_cb.grid(row=0, column=1, padx=(0, 4), pady=4, sticky="w")
         self.palette_cb.bind("<<ComboboxSelected>>", self._on_palette_changed)
-        ttk.Button(controls, text="Edit Palettes…", command=self.open_palette_editor).grid(row=0, column=5, padx=(0,8), pady=4, sticky="w")
 
+        self.edit_pal_btn = ttk.Button(self.palette_frame, text="Edit Palettes…", command=self.open_palette_editor)
+        self.edit_pal_btn.grid(row=0, column=2, padx=(0, 8), pady=4, sticky="w")
 
         ttk.Label(controls, text="Pixel size:").grid(row=0, column=6, padx=(0, 4), pady=4, sticky="e")
         self.pixel_var = tk.IntVar(value=12)
@@ -696,9 +683,13 @@ class PixelArtApp:
         self.nes_r = tk.BooleanVar(value=False)
         self.nes_g = tk.BooleanVar(value=False)
         self.nes_b = tk.BooleanVar(value=False)
-        ttk.Checkbutton(adv, text="Red", variable=self.nes_r, command=self.update_processing).grid(row=0, column=1, sticky="w")
-        ttk.Checkbutton(adv, text="Green", variable=self.nes_g, command=self.update_processing).grid(row=0, column=2, sticky="w")
-        ttk.Checkbutton(adv, text="Blue", variable=self.nes_b, command=self.update_processing).grid(row=0, column=3, sticky="w")
+        chk_r = ttk.Checkbutton(adv, text="Red", variable=self.nes_r, command=self.update_processing)
+        chk_g = ttk.Checkbutton(adv, text="Green", variable=self.nes_g, command=self.update_processing)
+        chk_b = ttk.Checkbutton(adv, text="Blue", variable=self.nes_b, command=self.update_processing)
+        chk_r.grid(row=0, column=1, sticky="w")
+        chk_g.grid(row=0, column=2, sticky="w")
+        chk_b.grid(row=0, column=3, sticky="w")
+        self.nes_controls_children = [chk_r, chk_g, chk_b]  # for optional dynamic enabling
 
         self.genesis_vdp = tk.BooleanVar(value=False)
         ttk.Checkbutton(adv, text="Genesis non-linear VDP levels", variable=self.genesis_vdp, command=self.update_processing).grid(row=0, column=4, padx=10, sticky="w")
@@ -733,8 +724,26 @@ class PixelArtApp:
         self.grid_inner.bind("<Configure>", lambda e: self.grid_canvas.configure(scrollregion=self.grid_canvas.bbox(self.grid_window)))
         self.grid_canvas.bind('<Configure>', self._on_canvas_resize)
 
+        # Ensure palette controls start with correct visibility
+        self._update_palette_visibility()
+
     def _on_canvas_resize(self, event):
         self.grid_canvas.itemconfig(self.grid_window, width=event.width)
+
+    # ------------- show/hide custom palette UI -------------
+    def _update_palette_visibility(self):
+        """Show palette controls only when Custom Palette style is selected."""
+        is_custom = (self.style_var.get() == "Custom Palette (User)")
+        if is_custom:
+            if not self.palette_frame.winfo_ismapped():
+                self.palette_frame.grid()  # restore with previous grid options
+        else:
+            self.palette_frame.grid_remove()
+
+        # Optional: enable NES emphasis only when NES style
+        nes_enabled = (self.style_var.get() == "NES (Nestopia 54-color)")
+        for w in getattr(self, "nes_controls_children", []):
+            w.configure(state=("normal" if nes_enabled else "disabled"))
 
     # ------------- events & helpers -------------
     def _on_palette_changed(self, *_):
@@ -789,7 +798,6 @@ class PixelArtApp:
             messagebox.showerror("Error", f"Processing failed:\n{e}")
 
     def refresh_compare(self):
-        # Clear existing
         for w in list(self.grid_inner.children.values()):
             w.destroy()
         self.compare_photos.clear()
@@ -801,11 +809,24 @@ class PixelArtApp:
         pixel_size = int(self.pixel_var.get())
         dither = bool(self.dither_var.get())
 
-        # Build grid of previews
         cols = 2
         r = c = 0
         for style in STYLES:
             try:
+                if style == "Custom Palette (User)":
+                    pal = self._get_selected_custom_palette()
+                    if not pal:
+                        # Show a placeholder with info if there's no palette
+                        frame = ttk.Frame(self.grid_inner, padding=6)
+                        ttk.Label(frame, text="Custom Palette (User)").pack()
+                        ttk.Label(frame, text="(No colors in selected palette)").pack()
+                        frame.grid(row=r, column=c, sticky='nwe')
+                        c += 1
+                        if c >= cols:
+                            c = 0
+                            r += 1
+                        continue
+
                 custom_pal = self._get_selected_custom_palette() if style == "Custom Palette (User)" else None
                 out = apply_style(
                     self.original_image, style, pixel_size, dither,
@@ -890,10 +911,8 @@ class PixelArtApp:
     # --------- palette editor integration ---------
     def open_palette_editor(self):
         def on_commit(name):
-            # update selection after dialog OK
             self.current_palette_name = name
             self.palette_var.set(name)
-            # refresh palette list in combobox
             self.palette_cb.configure(values=list(self.custom_palettes.keys()))
             self.update_processing()
         PaletteEditor(self.root, self.custom_palettes, self.current_palette_name, on_commit)
