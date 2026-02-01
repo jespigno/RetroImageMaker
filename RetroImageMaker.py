@@ -242,7 +242,6 @@ STYLES = [
     "ZX Spectrum (8 colors)",
     "EGA 16",
     "Apple II (Lo-Res 16)",
-
     "Game Boy Color (RGB555, 32 colors)",
     "Game Boy Advance (RGB555, 64 colors)",
     "Nintendo DS (RGB666, 64 colors)",
@@ -250,14 +249,14 @@ STYLES = [
     "Sega Genesis / Mega Drive (RGB333, 64 colors)",
     "NES (Nestopia 54-color)",
     "Nintendo 64 (RGBA5551-like, 64 colors)",
-
     "Adaptive 32-color (Arcade-like)",
+    "Custom Palette (User)",
 ]
 
 def apply_style(img: Image.Image, style: str, pixel_size: int, dither: bool,
                 nes_r=False, nes_g=False, nes_b=False,
                 genesis_vdp=False, ps1_movie=False,
-                n64_mode="RGBA5551") -> Image.Image:
+                n64_mode="RGBA5551", custom_palette=None) -> Image.Image:
     work = pixelate(img, pixel_size)
 
     if style == "PICO-8 (16 colors)":
@@ -331,12 +330,309 @@ def apply_style(img: Image.Image, style: str, pixel_size: int, dither: bool,
         work = enhance_arcade(work)
         dither_flag = 1 if dither else 0
         work = work.convert('RGB').quantize(colors=32, method=0, dither=dither_flag).convert('RGB')
+    
+    elif style == "Custom Palette (User)":
+        pal = custom_palette if custom_palette else CUSTOM_PALETTES.get(DEFAULT_CUSTOM_NAME, [])
+        if not pal:
+            raise ValueError("Custom palette is empty. Edit or import a palette.")
+        work = quantize_to_palette(work, pal, dither)
 
     return work
 
+#Palette editor stuff
+
+class PaletteEditor(tk.Toplevel):
+    SWATCH_SIZE = 22
+    COLS = 16
+
+    def __init__(self, parent, palettes_dict: dict, selected_name: str, on_commit):
+        super().__init__(parent)
+        self.title("Palette Editor")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self.palettes = palettes_dict
+        self.on_commit = on_commit
+
+        self.name_var = tk.StringVar(value=selected_name if selected_name in self.palettes else DEFAULT_CUSTOM_NAME)
+        self.hex_var = tk.StringVar(value="#FFFFFF")
+        self.selected_index = None  # currently selected swatch index
+
+        # Top row: palette selector + actions
+        top = ttk.Frame(self, padding=10)
+        top.pack(fill=tk.X)
+        ttk.Label(top, text="Palette:").grid(row=0, column=0, sticky="w", padx=(0,4))
+        self.name_cb = ttk.Combobox(top, state="readonly", values=list(self.palettes.keys()), textvariable=self.name_var, width=28)
+        self.name_cb.grid(row=0, column=1, sticky="w")
+        self.name_cb.bind("<<ComboboxSelected>>", lambda e: self._reload_grid())
+
+        ttk.Button(top, text="New…", command=self._new_palette).grid(row=0, column=2, padx=4)
+        ttk.Button(top, text="Rename…", command=self._rename_palette).grid(row=0, column=3, padx=4)
+        ttk.Button(top, text="Delete", command=self._delete_palette).grid(row=0, column=4, padx=4)
+
+        # Swatch grid
+        grid_frame = ttk.LabelFrame(self, text="Colors", padding=10)
+        grid_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0,10))
+        self.grid_frame = grid_frame
+
+        # Controls area
+        ctrl = ttk.Frame(self, padding=(10,0,10,10))
+        ctrl.pack(fill=tk.X)
+
+        ttk.Label(ctrl, text="Hex:").grid(row=0, column=0, sticky="e")
+        hex_entry = ttk.Entry(ctrl, textvariable=self.hex_var, width=10)
+        hex_entry.grid(row=0, column=1, sticky="w", padx=(4,8))
+        ttk.Button(ctrl, text="Add / Replace", command=self._add_or_replace_from_hex).grid(row=0, column=2, padx=4)
+        ttk.Button(ctrl, text="Eyedropper…", command=self._eyedropper).grid(row=0, column=3, padx=4)
+        ttk.Button(ctrl, text="Remove", command=self._remove_selected).grid(row=0, column=4, padx=4)
+        ttk.Button(ctrl, text="Up", command=lambda: self._move_selected(-1)).grid(row=0, column=5, padx=2)
+        ttk.Button(ctrl, text="Down", command=lambda: self._move_selected(1)).grid(row=0, column=6, padx=2)
+        ttk.Button(ctrl, text="Clear", command=self._clear_palette).grid(row=0, column=7, padx=8)
+
+        # Import/Export + OK/Cancel
+        bottom = ttk.Frame(self, padding=10)
+        bottom.pack(fill=tk.X)
+        ttk.Button(bottom, text="Import…", command=self._import_palette).pack(side=tk.LEFT)
+        ttk.Button(bottom, text="Export…", command=self._export_palette).pack(side=tk.LEFT, padx=6)
+        ttk.Label(bottom, text="(supports .gpl and JASC .pal)", foreground="#555").pack(side=tk.LEFT, padx=6)
+        ttk.Button(bottom, text="Use This Palette", command=self._commit).pack(side=tk.RIGHT)
+        ttk.Button(bottom, text="Close", command=self.destroy).pack(side=tk.RIGHT, padx=6)
+
+        self._build_grid()
+        self._reload_grid()
+
+    def _build_grid(self):
+        # Clear current children
+        for w in list(self.grid_frame.children.values()):
+            w.destroy()
+
+        # Create a fixed grid of buttons (up to 256)
+        self.swatch_btns = []
+        for i in range(256):
+            r = i // self.COLS
+            c = i % self.COLS
+            btn = tk.Label(self.grid_frame, width=2, height=1, relief="solid", bd=1, cursor="hand2")
+            btn.grid(row=r, column=c, padx=2, pady=2)
+            btn.bind("<Button-1>", lambda e, idx=i: self._on_swatch_click(idx))
+            self.swatch_btns.append(btn)
+
+            
+    def _reload_grid(self):
+        name = self.name_var.get()
+        if name not in self.palettes:
+            self.palettes[name] = []
+        pal = self.palettes[name]
+        for i, btn in enumerate(self.swatch_btns):
+            if i < len(pal):
+                rgb = pal[i]
+                btn.configure(bg=to_hex(rgb))
+            else:
+                btn.configure(bg=self.cget("bg"))
+        self.selected_index = None
+
+        # update combobox list (in case of add/delete/rename)
+        self.name_cb.configure(values=list(self.palettes.keys()))
+        self.name_cb.set(name)
+
+    def _on_swatch_click(self, idx: int):
+        name = self.name_var.get()
+        pal = self.palettes.get(name, [])
+        self.selected_index = idx if idx < len(pal) else None
+        if self.selected_index is not None:
+            self.hex_var.set(to_hex(pal[self.selected_index]))
+        # visualize selection (bold border)
+        for i, btn in enumerate(self.swatch_btns):
+            btn.configure(highlightthickness=2 if i == self.selected_index else 0, highlightbackground="#333")
+    
+    
+    def _add_or_replace_from_hex(self):
+        try:
+            rgb = parse_hex_color(self.hex_var.get())
+        except Exception as e:
+            messagebox.showerror("Hex error", str(e), parent=self)
+            return
+        name = self.name_var.get()
+        pal = self.palettes.get(name, [])
+        if self.selected_index is None:
+            if len(pal) >= 256:
+                messagebox.showinfo("Palette full", "Maximum 256 colors.", parent=self)
+                return
+            pal.append(rgb)
+        else:
+            pal[self.selected_index] = rgb
+        self.palettes[name] = pal
+        self._reload_grid()
+
+    
+    def _eyedropper(self):
+        # use tk color chooser; returns ((r,g,b), "#RRGGBB")
+        color = colorchooser.askcolor(parent=self, title="Pick a color")
+        if color and color[0] is not None:
+            r,g,b = [clamp8(v) for v in color[0]]
+            self.hex_var.set(to_hex((r,g,b)))
+            # immediately add/replace to speed up workflow
+            self._add_or_replace_from_hex()
+        
+    
+    def _remove_selected(self):
+        name = self.name_var.get()
+        pal = self.palettes.get(name, [])
+        if self.selected_index is not None and self.selected_index < len(pal):
+            pal.pop(self.selected_index)
+            self.selected_index = None
+            self._reload_grid()
+
+    def _move_selected(self, delta):
+        name = self.name_var.get()
+        pal = self.palettes.get(name, [])
+        i = self.selected_index
+        if i is None or i < 0 or i >= len(pal):
+            return
+        j = i + delta
+        if 0 <= j < len(pal):
+            pal[i], pal[j] = pal[j], pal[i]
+            self.selected_index = j
+            self._reload_grid()
+            # re-highlight moved index
+            self._on_swatch_click(j)
+    
+    
+    def _clear_palette(self):
+        name = self.name_var.get()
+        if messagebox.askyesno("Clear palette", f"Remove all colors from '{name}'?", parent=self):
+            self.palettes[name] = []
+            self.selected_index = None
+            self._reload_grid()
+
+    def _new_palette(self):
+        new_name = self._ask_text("New Palette", "Name:", default="New Palette")
+        if not new_name:
+            return
+        if new_name in self.palettes:
+            messagebox.showerror("Exists", "A palette with that name already exists.", parent=self)
+            return
+        self.palettes[new_name] = []
+        self.name_var.set(new_name)
+        self._reload_grid()
 
 
+    def _rename_palette(self):
+        curr = self.name_var.get()
+        new_name = self._ask_text("Rename Palette", "New name:", default=curr)
+        if not new_name or new_name == curr:
+            return
+        if new_name in self.palettes:
+            messagebox.showerror("Exists", "A palette with that name already exists.", parent=self)
+            return
+        self.palettes[new_name] = self.palettes.pop(curr)
+        self.name_var.set(new_name)
+        self._reload_grid()
 
+    
+    def _delete_palette(self):
+        name = self.name_var.get()
+        if messagebox.askyesno("Delete palette", f"Delete '{name}'?", parent=self):
+            try:
+                del self.palettes[name]
+            except KeyError:
+                pass
+            # ensure at least one palette exists
+            if not self.palettes:
+                self.palettes[DEFAULT_CUSTOM_NAME] = []
+                self.name_var.set(DEFAULT_CUSTOM_NAME)
+            else:
+                self.name_var.set(list(self.palettes.keys())[0])
+            self._reload_grid()
+
+
+    def _import_palette(self):
+        path = filedialog.askopenfilename(
+            title="Import Palette",
+            filetypes=[("Palettes", ".gpl .pal"), ("GIMP/Aseprite .gpl", ".gpl"), ("JASC-PAL .pal", ".pal"), ("All files", "*.*")]
+        )
+        if not path:
+            return
+        try:
+            ext = os.path.splitext(path)[1].lower()
+            if ext == ".gpl":
+                pal = load_gpl(path)
+            elif ext == ".pal":
+                pal = load_jasc_pal(path)
+            else:
+                raise ValueError("Unsupported extension")
+            # add as a new palette name = filename
+            base = os.path.splitext(os.path.basename(path))[0]
+            name = base
+            suffix = 1
+            while name in self.palettes:
+                suffix += 1
+                name = f"{base} ({suffix})"
+            self.palettes[name] = pal
+            self.name_var.set(name)
+            self._reload_grid()
+        except Exception as e:
+            messagebox.showerror("Import failed", str(e), parent=self)
+        
+
+    def _export_palette(self):
+        name = self.name_var.get()
+        pal = self.palettes.get(name, [])
+        if not pal:
+            messagebox.showinfo("Empty palette", "Nothing to export.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Palette",
+            defaultextension=".gpl",
+            initialfile=f"{name}.gpl",
+            filetypes=[("GIMP/Aseprite .gpl", ".gpl"), ("JASC-PAL .pal", ".pal"), ("All files", "*.*")]
+        )
+        if not path:
+            return
+        try:
+            ext = os.path.splitext(path)[1].lower()
+            if ext == ".gpl":
+                save_gpl(path, pal, name=name)
+            elif ext == ".pal":
+                save_jasc_pal(path, pal)
+            else:
+                raise ValueError("Choose .gpl or .pal")
+            messagebox.showinfo("Exported", f"Saved palette to:\n{path}", parent=self)  
+        except Exception as e:
+            messagebox.showerror("Export failed", str(e), parent=self)
+        
+    
+    def _commit(self):
+        """Return chosen palette name to parent."""
+        if callable(self.on_commit):
+            self.on_commit(self.name_var.get())
+        self.destroy()
+    
+    
+    def _ask_text(self, title, prompt, default=""):
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.transient(self)
+        win.grab_set()
+        ttk.Label(win, text=prompt, padding=10).pack()
+        var = tk.StringVar(value=default)
+        entry = ttk.Entry(win, textvariable=var, width=30)
+        entry.pack(padx=10)
+        entry.focus_set()
+        btns = ttk.Frame(win, padding=10)
+        btns.pack()
+        out = {"val": None}
+
+        def ok():
+            out["val"] = var.get().strip()
+            win.destroy()
+        def cancel():
+            win.destroy()
+        
+        ttk.Button(btns, text="OK", command=ok).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Cancel", command=cancel).pack(side=tk.LEFT, padx=5)
+        self.wait_window(win)
+        return out["val"]
 
 #UI stuff
 class PixelArtApp:
