@@ -11,7 +11,7 @@ Python app that converts input images into the pixelated style seen in different
 
 ## Run
 ```bash
-pip install pillow
+pip install pillow tkinterdnd2
 python RetroImageMaker.py
 ```
 
