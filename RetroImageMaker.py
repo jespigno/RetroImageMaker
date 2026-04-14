@@ -73,7 +73,7 @@ DEFAULT_CUSTOM_NAME = "My Palette"
 CUTE_MODES = [
     "None",
     "Pastel",
-    "Kawaii",
+    "Cute",
     "CRT",
     "Sticker Outline",
     "Handheld Screen",
@@ -85,7 +85,7 @@ CUTE_MODES = [
 
 CUTE_MODE_SHORTCUTS = [
     ("Pastel", "Pastel"),
-    ("Kawaii", "Kawaii"),
+    ("Cute", "Cute"),
     ("CRT", "CRT"),
     ("Sticker", "Sticker Outline"),
     ("Handheld", "Handheld Screen"),
@@ -393,25 +393,6 @@ def _add_vignette(img: Image.Image, strength=0.35):
     return ImageChops.multiply(img, Image.merge('RGB', (mask, mask, mask)))
 
 
-def _rounded_mask(size, radius):
-    w, h = size
-    mask = Image.new('L', (w, h), 0)
-    draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle((0, 0, w - 1, h - 1), radius=radius, fill=255)
-    return mask
-
-
-def _paste_center(canvas: Image.Image, img: Image.Image, box):
-    x0, y0, x1, y1 = box
-    bw = max(1, x1 - x0)
-    bh = max(1, y1 - y0)
-    fit = ImageOps.contain(img, (bw, bh), Image.LANCZOS)
-    px = x0 + (bw - fit.width) // 2
-    py = y0 + (bh - fit.height) // 2
-    canvas.paste(fit, (px, py), fit if fit.mode == 'RGBA' else None)
-    return canvas
-
-
 def cute_pastel(img: Image.Image) -> Image.Image:
     img = img.convert('RGB')
     img = ImageEnhance.Color(img).enhance(0.78)
@@ -505,11 +486,9 @@ def cute_handheld_screen(img: Image.Image) -> Image.Image:
     screen_box = (bezel, bezel, bezel + w, bezel + h)
     draw.rounded_rectangle((screen_box[0] - 6, screen_box[1] - 6, screen_box[2] + 6, screen_box[3] + 6), radius=12, fill=(70, 74, 60))
     canvas.paste(screen, (screen_box[0], screen_box[1]))
-    # scanlines
     sc = canvas.crop(screen_box)
     sc = cute_crt(sc)
     canvas.paste(sc, (screen_box[0], screen_box[1]))
-    # controls
     cy = h + bezel * 2 + footer // 2
     draw.ellipse((bezel + 20, cy - 12, bezel + 44, cy + 12), fill=(150, 145, 135), outline=(88, 83, 77))
     draw.ellipse((bezel + 56, cy - 12, bezel + 80, cy + 12), fill=(150, 145, 135), outline=(88, 83, 77))
@@ -530,13 +509,11 @@ def cute_postcard_frame(img: Image.Image) -> Image.Image:
     canvas.paste(photo, (border, border))
     draw.rectangle((border - 1, border - 1, border + w, border + h), outline=(218, 208, 192), width=1)
     draw.rectangle((0, 0, canvas.width - 1, canvas.height - 1), outline=(225, 215, 200), width=2)
-    # fake stamp
     sx0 = canvas.width - border - 46
     sy0 = border + 10
     for i in range(6):
         draw.arc((sx0 - 6, sy0 - 6 + i * 6, sx0 + 42, sy0 + 20 + i * 6), start=80, end=280, fill=(170, 120, 120), width=1)
     draw.rectangle((sx0, sy0, sx0 + 36, sy0 + 46), outline=(180, 110, 110), width=2)
-    # handwriting line
     y = h + border + caption_h // 2
     draw.line((border + 20, y, canvas.width - border - 20, y), fill=(208, 196, 180), width=1)
     return canvas
@@ -577,7 +554,6 @@ def cute_drawing(img: Image.Image) -> Image.Image:
     gray = ImageOps.grayscale(rgb)
     inv = ImageOps.invert(gray)
     blur = inv.filter(ImageFilter.GaussianBlur(radius=12))
-    # dodge blend approximation
     g = gray.load()
     b = blur.load()
     out = Image.new('L', gray.size)
@@ -603,7 +579,7 @@ def apply_cute_mode(img: Image.Image, cute_mode: str) -> Image.Image:
         return img
     if cute_mode == "Pastel":
         return cute_pastel(img)
-    if cute_mode == "Kawaii":
+    if cute_mode == "Cute":
         return cute_kawaii(img)
     if cute_mode == "CRT":
         return cute_crt(img)
@@ -630,7 +606,6 @@ def parse_dnd_files(data: str):
         return []
     data = data.strip()
     out = []
-    # Handles patterns like: {C:/path with spaces/file.png} C:/other/file.jpg
     token_re = re.compile(r'\{[^}]*\}|\S+')
     for token in token_re.findall(data):
         token = token.strip()
@@ -908,7 +883,6 @@ class PaletteEditor(tk.Toplevel):
         return out["val"]
 
 
-# UI stuff
 class PixelArtApp:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -941,6 +915,7 @@ class PixelArtApp:
         controls.pack(side=tk.TOP, fill=tk.X)
         self.load_btn = ttk.Button(controls, text="Load Image…", command=self.load_image)
         self.load_btn.grid(row=0, column=0, padx=(0, 8), pady=4, sticky="w")
+
         ttk.Label(controls, text="Style:").grid(row=0, column=1, padx=(0, 4), pady=4, sticky="e")
         self.style_var = tk.StringVar(value=STYLES[0])
         self.style_cb = ttk.Combobox(controls, textvariable=self.style_var, values=STYLES, state="readonly", width=36)
@@ -953,8 +928,7 @@ class PixelArtApp:
         ttk.Label(self.palette_frame, text="Palette:").grid(row=0, column=0, padx=(0, 4), pady=4, sticky="e")
         self.palette_var = tk.StringVar(value=self.current_palette_name)
         self.palette_cb = ttk.Combobox(self.palette_frame, textvariable=self.palette_var,
-                                       values=list(self.custom_palettes.keys()),
-                                       state="readonly", width=24)
+                                       values=list(self.custom_palettes.keys()), state="readonly", width=24)
         self.palette_cb.grid(row=0, column=1, padx=(0, 4), pady=4, sticky="w")
         self.palette_cb.bind("<<ComboboxSelected>>", self._on_palette_changed)
         self.edit_pal_btn = ttk.Button(self.palette_frame, text="Edit Palettes…", command=self.open_palette_editor)
@@ -963,11 +937,13 @@ class PixelArtApp:
         ttk.Label(controls, text="Pixel size:").grid(row=0, column=6, padx=(0, 4), pady=4, sticky="e")
         self.pixel_var = tk.IntVar(value=12)
         self.pixel_slider = ttk.Scale(controls, from_=4, to=48, orient=tk.HORIZONTAL, command=self.on_slider)
-        self.pixel_slider.set(self.pixel_var.get())
         self.pixel_slider.grid(row=0, column=7, padx=(0, 8), pady=4, sticky="we")
         controls.columnconfigure(7, weight=1)
+
+        # FIX: create the label BEFORE calling self.pixel_slider.set(...)
         self.pixel_label = ttk.Label(controls, text=f"{self.pixel_var.get()} px")
         self.pixel_label.grid(row=0, column=8, padx=(0, 8), pady=4, sticky="w")
+        self.pixel_slider.set(self.pixel_var.get())
 
         self.dither_var = tk.BooleanVar(value=False)
         self.dither_chk = ttk.Checkbutton(controls, text="Dithering", variable=self.dither_var, command=self.update_processing)
@@ -975,15 +951,33 @@ class PixelArtApp:
         self.save_btn = ttk.Button(controls, text="Save Pixel Art…", command=self.save_image)
         self.save_btn.grid(row=0, column=10, padx=(0, 8), pady=4, sticky="e")
 
-        cute = ttk.LabelFrame(self.single_tab, text="Cute Modes (one click)", padding=10)
+        # Cute modes section
+        cute = ttk.LabelFrame(self.single_tab, text="Preset Modes (one click)", padding=10)
         cute.pack(side=tk.TOP, fill=tk.X, padx=10, pady=(0, 10))
-        ttk.Label(cute, text="Current:").grid(row=0, column=0, sticky="w")
-        self.cute_mode_cb = ttk.Combobox(cute, textvariable=self.cute_mode_var, values=CUTE_MODES, state="readonly", width=18)
-        self.cute_mode_cb.grid(row=0, column=1, padx=(6, 12), sticky="w")
+
+        top_cute = ttk.Frame(cute)
+        top_cute.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(top_cute, text="Current:").pack(side=tk.LEFT)
+        self.cute_mode_cb = ttk.Combobox(top_cute, textvariable=self.cute_mode_var, values=CUTE_MODES, state="readonly", width=18)
+        self.cute_mode_cb.pack(side=tk.LEFT, padx=(6, 12))
         self.cute_mode_cb.bind("<<ComboboxSelected>>", lambda e: self.update_processing())
-        ttk.Button(cute, text="Reset", command=lambda: self.set_cute_mode("None")).grid(row=0, column=2, padx=(0, 12), sticky="w")
+        ttk.Button(top_cute, text="Reset", command=lambda: self.set_cute_mode("None")).pack(side=tk.LEFT, padx=(0, 12))
+
+        # Horizontal single-row cute mode buttons with scrollbar
+        cute_row_wrap = ttk.Frame(cute)
+        cute_row_wrap.pack(fill=tk.X)
+        self.cute_canvas = tk.Canvas(cute_row_wrap, height=42, highlightthickness=0, borderwidth=0)
+        self.cute_canvas.pack(side=tk.TOP, fill=tk.X, expand=True)
+        cute_x_scroll = ttk.Scrollbar(cute_row_wrap, orient=tk.HORIZONTAL, command=self.cute_canvas.xview)
+        cute_x_scroll.pack(side=tk.TOP, fill=tk.X)
+        self.cute_canvas.configure(xscrollcommand=cute_x_scroll.set)
+        self.cute_inner = ttk.Frame(self.cute_canvas)
+        self.cute_canvas_window = self.cute_canvas.create_window((0, 0), window=self.cute_inner, anchor='nw')
+        self.cute_inner.bind("<Configure>", self._on_cute_inner_configure)
+        self.cute_canvas.bind("<Configure>", self._on_cute_canvas_configure)
+
         for i, (label, mode) in enumerate(CUTE_MODE_SHORTCUTS):
-            ttk.Button(cute, text=label, command=lambda m=mode: self.set_cute_mode(m)).grid(row=1 + (i // 5), column=i % 5, padx=4, pady=4, sticky="w")
+            ttk.Button(self.cute_inner, text=label, command=lambda m=mode: self.set_cute_mode(m)).grid(row=0, column=i, padx=4, pady=4, sticky="w")
 
         adv = ttk.LabelFrame(self.single_tab, text="Advanced options", padding=10)
         adv.pack(side=tk.TOP, fill=tk.X, padx=10, pady=(0, 10))
@@ -1038,10 +1032,16 @@ class PixelArtApp:
         self._update_palette_visibility()
         self._init_drag_and_drop()
 
+    def _on_cute_inner_configure(self, event=None):
+        self.cute_canvas.configure(scrollregion=self.cute_canvas.bbox("all"))
+
+    def _on_cute_canvas_configure(self, event):
+        self.cute_canvas.itemconfigure(self.cute_canvas_window, height=event.height)
+
     def _empty_state_text(self):
         if HAS_DND:
-            return "Drop an image here or click 'Load Image…'\n\nThen pick a retro style and a cute mode ✨"
-        return "Click 'Load Image…' to open an image\n\n(Optional drag-and-drop support: pip install tkinterdnd2)"
+            return "Drop an image here or click 'Load Image…'"
+        return "Click 'Load Image…' to open an image"
 
     def _drop_hint_text(self):
         return "You can drag a .png / .jpg / .bmp / .gif file onto the preview area." if HAS_DND else "Tip: install tkinterdnd2 for drag-and-drop."
@@ -1090,7 +1090,8 @@ class PixelArtApp:
     def on_slider(self, value):
         val = int(float(value))
         self.pixel_var.set(val)
-        self.pixel_label.configure(text=f"{val} px")
+        if hasattr(self, 'pixel_label'):
+            self.pixel_label.configure(text=f"{val} px")
         if self.preview_job is not None:
             try:
                 self.root.after_cancel(self.preview_job)
