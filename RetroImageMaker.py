@@ -7,7 +7,6 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
 
 try:
-    # Optional dependency for native drag-and-drop support.
     from tkinterdnd2 import TkinterDnD, DND_FILES
     HAS_DND = True
 except Exception:
@@ -20,7 +19,7 @@ from PIL import Image, ImageTk, ImageEnhance, ImageFilter, ImageOps, ImageDraw, 
 APP_TITLE = "RetroImageMaker"
 PREVIEW_SIZE = (512, 512)
 GRID_THUMB_SIZE = (256, 256)
-MAX_PREVIEW_PROCESS_SIZE = 1600  # keeps interaction snappy on huge images
+MAX_PREVIEW_PROCESS_SIZE = 1600 
 
 # Built-in palettes
 PICO8_PALETTE = [
@@ -64,7 +63,7 @@ NES_NESTOPIA_54 = [
     (181,239,239),(74,206,222),(0,123,140),(0,66,74),(181,181,181),(82,82,82)
 ]
 
-# Custom palette logic
+# Custom palette stuff
 CUSTOM_PALETTES = {
     "My Palette": list(PICO8_PALETTE),
 }
@@ -371,7 +370,7 @@ def apply_style(img: Image.Image, style: str, pixel_size: int, dither: bool,
     return work
 
 
-# ---------------- cute mode helpers ----------------
+#custom mode helpers
 
 def _soft_light_blend(base: Image.Image, overlay: Image.Image, alpha=0.35) -> Image.Image:
     return Image.blend(base.convert('RGB'), overlay.convert('RGB'), max(0.0, min(1.0, alpha)))
@@ -940,7 +939,6 @@ class PixelArtApp:
         self.pixel_slider.grid(row=0, column=7, padx=(0, 8), pady=4, sticky="we")
         controls.columnconfigure(7, weight=1)
 
-        # FIX: create the label BEFORE calling self.pixel_slider.set(...)
         self.pixel_label = ttk.Label(controls, text=f"{self.pixel_var.get()} px")
         self.pixel_label.grid(row=0, column=8, padx=(0, 8), pady=4, sticky="w")
         self.pixel_slider.set(self.pixel_var.get())
@@ -963,7 +961,6 @@ class PixelArtApp:
         self.cute_mode_cb.bind("<<ComboboxSelected>>", lambda e: self.update_processing())
         ttk.Button(top_cute, text="Reset", command=lambda: self.set_cute_mode("None")).pack(side=tk.LEFT, padx=(0, 12))
 
-        # Horizontal single-row cute mode buttons with scrollbar
         cute_row_wrap = ttk.Frame(cute)
         cute_row_wrap.pack(fill=tk.X)
         self.cute_canvas = tk.Canvas(cute_row_wrap, height=42, highlightthickness=0, borderwidth=0)
